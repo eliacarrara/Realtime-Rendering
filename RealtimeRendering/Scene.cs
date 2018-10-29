@@ -2,55 +2,34 @@
 using System.Collections.Generic;
 using System.Numerics;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Shapes;
 
 namespace RealtimeRendering
 {
     class Scene
     {
-        public Scene(Vector3[] points, Tuple<int, int, int>[] triangles)
+        const float ANGLE = 0.01f; // ~0.57°
+        static readonly Matrix4x4 rotMX = Matrix4x4.CreateRotationX(ANGLE);
+        static readonly Matrix4x4 rotMY = Matrix4x4.CreateRotationY(ANGLE);
+        static readonly Matrix4x4 rotMZ = Matrix4x4.CreateRotationZ(2*ANGLE);
+        static readonly Matrix4x4 rotM = rotMX * rotMY * rotMZ; 
+
+        public Scene(ColorPoint[] points, Triangle[] triangles)
         {
             Points = points;
             Triangles = triangles;
         }
 
-        public Vector3[] Points { get; private set; }
-        public Tuple<int, int, int>[] Triangles;
-        public static Scene Triangle ()
+        public ColorPoint[] Points { get; private set; }
+        public Triangle[] Triangles { get; private set; }
+        
+        public void RotateAll()
         {
-            Vector3[] points = new Vector3[]
+            for (int i = 0; i < Points.Length; i++)
             {
-                new Vector3(-1, -1, -1), // top
-                new Vector3(1, -1, -1),
-                new Vector3(1, 1, -1),
-                new Vector3(-1, 1, -1),
-
-                new Vector3(-1, -1, 1), // bottom
-                new Vector3(1, -1, 1),
-                new Vector3(1, 1, 1),
-                new Vector3(-1, 1, 1),
-            };
-            Tuple<int, int, int>[] triangles = new Tuple<int, int, int>[]
-            {
-                new Tuple<int, int, int>(0, 1, 2), // top
-                new Tuple<int, int, int>(0, 2, 3),
-
-                new Tuple<int, int, int>(7, 6, 5), // bottom
-                new Tuple<int, int, int>(7, 5, 6),
-
-                new Tuple<int, int, int>(0, 3, 7), // left
-                new Tuple<int, int, int>(0, 7, 4),
-
-                new Tuple<int, int, int>(2, 1, 5), // right
-                new Tuple<int, int, int>(2, 5, 6),
-
-                new Tuple<int, int, int>(3, 2, 6), // front
-                new Tuple<int, int, int>(3, 6, 7),
-
-                new Tuple<int, int, int>(1, 0, 4), // back
-                new Tuple<int, int, int>(1, 4, 5),
-            };
-            return  new Scene(points, triangles);
+                Points[i].Position = Vector3.Transform(Points[i].Position, rotM);
+            }
         }
     }
 }

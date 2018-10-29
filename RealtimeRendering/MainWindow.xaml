@@ -8,5 +8,6 @@
         Title="MainWindow" Height="550" Width="520">
     <Grid>
         <Canvas Name="PaintCanvas" Width="480" Height="480" MinWidth="480" MinHeight="480"/>
+        <Label x:Name="LblFPS" Content="-" HorizontalAlignment="Left" Margin="17,20,0,0" VerticalAlignment="Top" Background="Black" Foreground="White"/>
     </Grid>
 </Window>
