@@ -7,6 +7,16 @@ namespace RealtimeRendering
 {
     class Renderer
     {
+        public enum Output
+        {
+            FullRender,
+            ZBuffer,
+            PositionBuffer,
+            TexturePositionBuffer,
+            NormalBuffer,
+            DiffuseColorBuffer,
+        }
+
         const float DPMS = (float)Math.PI / 8 / 1000f; // 22.5° per second
         const float K = 40;
         static readonly Matrix4x4 WORLD_TRANSLATION = Matrix4x4.CreateTranslation(new Vector3(0, 0, 10));
@@ -34,11 +44,14 @@ namespace RealtimeRendering
             _tposBuffers = new Vector2[Height * Width];
             _normalBuffers = new Vector3[Height * Width];
             _diffBuffers = new Vector3[Height * Width];
+            
+            OutputType = Output.FullRender;
         }
 
         public int Width { get; private set; }
         public int Height { get; private set; }
         public int Stride { get; private set; }
+        public Output OutputType { get; set; }
 
         public byte[] Render(Scene s)
         {
@@ -47,7 +60,7 @@ namespace RealtimeRendering
             var matrices = Helper.GetMatricesPair(rM * WORLD_TRANSLATION);
             int i = 0;
 
-            #region Buffer Reset
+            #region buffer reset
             for (i = 0; i < _canvasBuffer.Length; i++)
                 _canvasBuffer[i] = 0;
 
@@ -133,10 +146,55 @@ namespace RealtimeRendering
                 {
                     var bufPos = y * Width + x;
                     var outPos = y * Stride + (x * 3);
-                    var c = CalcColor(s.Lights, _normalBuffers[bufPos], _posBuffers[bufPos], _diffBuffers[bufPos], s.Camera.Eye);
-                    _canvasBuffer[outPos++] = Helper.ToGammaCorrectedByte(c.X);
-                    _canvasBuffer[outPos++] = Helper.ToGammaCorrectedByte(c.Y);
-                    _canvasBuffer[outPos++] = Helper.ToGammaCorrectedByte(c.Z);
+
+
+                    byte r, g, b;
+                    switch (OutputType)
+                    {
+                        case Output.FullRender:
+                            var c = CalcColor(s.Lights, _normalBuffers[bufPos], _posBuffers[bufPos], _diffBuffers[bufPos], s.Camera.Eye);
+                            r = Helper.ToGammaCorrectedByte(c.X);
+                            g = Helper.ToGammaCorrectedByte(c.Y);
+                            b = Helper.ToGammaCorrectedByte(c.Z);
+                            break;
+                        case Output.ZBuffer:
+                            float z = _depthBuffer[bufPos];
+                            r = Helper.ToGammaCorrectedByte(z);
+                            g = Helper.ToGammaCorrectedByte(z);
+                            b = Helper.ToGammaCorrectedByte(z);
+                            break;
+                        case Output.PositionBuffer:
+                            var p = Vector3.Abs(_posBuffers[bufPos]);
+                            r = Helper.ToGammaCorrectedByte(p.X);
+                            g = Helper.ToGammaCorrectedByte(p.Y);
+                            b = Helper.ToGammaCorrectedByte(p.Z);
+                            break;
+                        case Output.TexturePositionBuffer:
+                            r = Helper.ToGammaCorrectedByte(_tposBuffers[bufPos].X);
+                            g = Helper.ToGammaCorrectedByte(_tposBuffers[bufPos].Y);
+                            b = Helper.ToGammaCorrectedByte(0);
+                            break;
+                        case Output.NormalBuffer:
+                            p = Vector3.Abs(_normalBuffers[bufPos]);
+                            r = Helper.ToGammaCorrectedByte(p.X);
+                            g = Helper.ToGammaCorrectedByte(p.Y);
+                            b = Helper.ToGammaCorrectedByte(p.Z);
+                            break;
+                        case Output.DiffuseColorBuffer:
+                            r = Helper.ToGammaCorrectedByte(_diffBuffers[bufPos].X);
+                            g = Helper.ToGammaCorrectedByte(_diffBuffers[bufPos].Y);
+                            b = Helper.ToGammaCorrectedByte(_diffBuffers[bufPos].Z);
+                            break;
+                        default:
+                            r = 0;
+                            g = 0;
+                            b = 0;
+                            break;
+                    }
+
+                    _canvasBuffer[outPos++] = r;
+                    _canvasBuffer[outPos++] = g;
+                    _canvasBuffer[outPos++] = b;
                 }
             });
 
