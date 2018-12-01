@@ -1,92 +1,178 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Diagnostics;
 using System.Numerics;
-using System.Text;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Shapes;
 
 namespace RealtimeRendering
 {
     class Renderer
     {
-        readonly Vector3 Z_PLANE = new Vector3(0, 0, 1);
-        readonly Vector3 Z_PLANE_N = Vector3.UnitZ;
+        const float DPMS = (float)Math.PI / 8 / 1000f; // 22.5° per second
+        const float K = 40;
+        static readonly Matrix4x4 WORLD_TRANSLATION = Matrix4x4.CreateTranslation(new Vector3(0, 0, 10));
+        static readonly float Z_MIN = WORLD_TRANSLATION.M43 - 2f;
+        static readonly float Z_MAX = WORLD_TRANSLATION.M43 + 2f;
 
-        byte[] _data;
+        readonly byte[] _canvasBuffer;
+        readonly Vector3[] _colorBuffer;
+        readonly float[] _depthBuffer;
+        readonly Vector3[] _posBuffers;
+        readonly Vector2[] _tposBuffers;
+        readonly Vector3[] _normalBuffers;
+        readonly Vector3[] _diffBuffers;
 
-        public Renderer(float width, float height, int stride)
+        public Renderer(int width, int height, int stride)
         {
             Width = width;
             Height = height;
             Stride = stride;
-            _data = new byte[(int)Height * Stride];
+            _canvasBuffer = new byte[Height * Stride];
+
+            _colorBuffer = new Vector3[Height * Width];
+            _depthBuffer = new float[Height * Width];
+            _posBuffers = new Vector3[Height * Width];
+            _tposBuffers = new Vector2[Height * Width];
+            _normalBuffers = new Vector3[Height * Width];
+            _diffBuffers = new Vector3[Height * Width];
         }
 
-        public float Width { get; set; }
-        public float Height { get; set; }
+        public int Width { get; private set; }
+        public int Height { get; private set; }
         public int Stride { get; private set; }
 
-        public byte[] Render(Scene s, double elapsedMilliseconds)
+        public byte[] Render(Scene s)
         {
-            _data = new byte[(int)Height * Stride];
-            for (int i = 0; i < s.Triangles.Length; i++)
-            {
-                Triangle t = s.Triangles[i];
-                var pA = Transform2D(s.Points[t.A].Position);
-                var pB = Transform2D(s.Points[t.B].Position);
-                var pC = Transform2D(s.Points[t.C].Position);
-                var ab = pB - pA;
-                var ac = pC - pA;
+            var angle = DPMS * Environment.TickCount;
+            var rM = Helper.GetRotationMatrix(angle, angle, 0);
+            var matrices = Helper.GetMatricesPair(rM * WORLD_TRANSLATION);
+            int i = 0;
 
-                // backface culling
-                if (Vector3.Cross(new Vector3(ab, 0), new Vector3(ac, 0)).Z <= 0) 
+            #region Buffer Reset
+            for (i = 0; i < _canvasBuffer.Length; i++)
+                _canvasBuffer[i] = 0;
+
+            for (i = 0; i < _colorBuffer.Length; i++)
+            {
+                _colorBuffer[i] = Vector3.Zero;
+                _depthBuffer[i] = float.PositiveInfinity;
+                _posBuffers[i] = Vector3.Zero;
+                _tposBuffers[i] = Vector2.Zero;
+                _normalBuffers[i] = Vector3.Zero;
+                _diffBuffers[i] = Vector3.Zero;
+            }
+            #endregion
+
+            for (i = 0; i < s.FaceElement.Length; i++)
+            {
+                var t = s.FaceElement[i];
+                var tT = s.Textures[t.TextureIndex];
+
+                var aW = Vector4.Transform(s.Vertecies[t.A], matrices.Item1);
+                var bW = Vector4.Transform(s.Vertecies[t.B], matrices.Item1);
+                var cW = Vector4.Transform(s.Vertecies[t.C], matrices.Item1);
+
+                var aN = Vector4.Transform(s.Normals[t.NormalA], matrices.Item2);
+                var bN = Vector4.Transform(s.Normals[t.NormalB], matrices.Item2);
+                var cN = Vector4.Transform(s.Normals[t.NormalC], matrices.Item2);
+
+                var aT = Helper.ToHomogeneous(s.TexturePoints[t.TextureA], Helper.FromHomogeneous(aW).Z);
+                var bT = Helper.ToHomogeneous(s.TexturePoints[t.TextureB], Helper.FromHomogeneous(bW).Z);
+                var cT = Helper.ToHomogeneous(s.TexturePoints[t.TextureC], Helper.FromHomogeneous(cW).Z);
+
+                var aS = ToScreenCoordinates(aW);
+                var bS = ToScreenCoordinates(bW);
+                var cS = ToScreenCoordinates(cW);
+
+                var abS = bS - aS;
+                var acS = cS - aS;
+
+                // backface culling - z component of cross product
+                if (abS.X * acS.Y - abS.Y * acS.X <= 0)
                     continue;
 
-                float left = Math.Min(pA.X, Math.Min(pB.X, pC.X));
-                float right = Math.Max(pA.X, Math.Max(pB.X, pC.X));
-                float top = Math.Min(pA.Y, Math.Min(pB.Y, pC.Y));
-                float bottom = Math.Max(pA.Y, Math.Max(pB.Y, pC.Y));
+                var left = Math.Min(aS.X, Math.Min(bS.X, cS.X));
+                var right = Math.Max(aS.X, Math.Max(bS.X, cS.X));
+                var top = Math.Min(aS.Y, Math.Min(bS.Y, cS.Y));
+                var bottom = Math.Max(aS.Y, Math.Max(bS.Y, cS.Y));
 
-                var a = ab.X; var b = ac.X;
-                var c = ab.Y; var d = ac.Y;
-                var det = 1.0f / (a * d - b * c);
-                var aInv = det * d; var bInv = det * -b;
-                var cInv = det * -c; var dInv = det * a;
+                var det = 1.0f / (abS.X * acS.Y - acS.X * abS.Y);
+                var aInv = det * acS.Y; var bInv = det * -acS.X;
+                var cInv = det * -abS.Y; var dInv = det * abS.X;
 
                 for (int y = (int)top; y <= bottom && y < Height; y++)
                 {
-                    int yOffset = y * Stride;
+                    var yOffset = y * Height;
                     for (int x = (int)left; x <= right && x < Width; x++)
                     {
-                        var ap = new Vector2(x, y) - pA;
-                        var uv = new Vector2(aInv * ap.X + bInv * ap.Y, cInv * ap.X + dInv * ap.Y);
-                        if (uv.X >= 0 && uv.Y >= 0 && uv.X + uv.Y < 1)
-                        {
-                            var colorA = s.Points[t.A].Color;
-                            var colorB = s.Points[t.B].Color;
-                            var colorC = s.Points[t.C].Color;
-                            var color = colorA + uv.X * (colorB - colorA) + uv.Y * (colorC - colorA);
+                        var ap = new Vector2(x, y) - aS;
+                        var u = aInv * ap.X + bInv * ap.Y;
+                        var v = cInv * ap.X + dInv * ap.Y;
 
-                            int pos = x * 3 + yOffset;
-                            _data[pos++] = Helper.ConvertToGammaCorrectedByte(color.X);
-                            _data[pos++] = Helper.ConvertToGammaCorrectedByte(color.Y);
-                            _data[pos++] = Helper.ConvertToGammaCorrectedByte(color.Z);
-                        }
+                        // checks if point is in triangle
+                        if (u < 0 || v < 0 || u + v > 1)
+                            continue;
+
+                        var index = yOffset + x;
+                        _posBuffers[index] = Helper.FromHomogeneous(aW + u * (bW - aW) + v * (cW - aW));
+
+                        var z = (_posBuffers[index].Z - Z_MIN) / (Z_MAX - Z_MIN);
+                        if (z > _depthBuffer[index])
+                            continue;
+
+                        _depthBuffer[index] = z;
+                        _tposBuffers[index] = Helper.FromHomogeneous(aT + u * (bT - aT) + v * (cT - aT));
+                        _normalBuffers[index] = Helper.FromHomogeneous(aN + u * (bN - aN) + v * (cN - aN));
+                        _diffBuffers[index] = tT.GetColor(_tposBuffers[index]);
                     }
                 }
             }
 
-            return _data;
+            Parallel.For(0, Height, y =>
+            {
+                for (int x = 0; x < Width; x++)
+                {
+                    var bufPos = y * Width + x;
+                    var outPos = y * Stride + (x * 3);
+                    var c = CalcColor(s.Lights, _normalBuffers[bufPos], _posBuffers[bufPos], _diffBuffers[bufPos], s.Camera.Eye);
+                    _canvasBuffer[outPos++] = Helper.ToGammaCorrectedByte(c.X);
+                    _canvasBuffer[outPos++] = Helper.ToGammaCorrectedByte(c.Y);
+                    _canvasBuffer[outPos++] = Helper.ToGammaCorrectedByte(c.Z);
+                }
+            });
+
+            return _canvasBuffer;
         }
 
-        private Vector2 Transform2D(Vector3 point)
+        private Vector3 CalcColor(Light[] lights, Vector3 n, Vector3 p, Vector3 c, Vector3 o)
         {
-            Vector3 v = point + new Vector3(0, 0, 5);
-            float x = (Width * v.X / v.Z) + (Width / 2);
-            float y = (Width * v.Y / v.Z) + (Height / 2);
+            n = Vector3.Normalize(n);
+            Vector3 diff = Vector3.Zero;
+            Vector3 spec = Vector3.Zero;
+            for (int i = 0; i < lights.Length; i++)
+            {
+                var color = lights[i].Color;
+                var l = Vector3.Normalize(lights[i].Position - p);
+                var cosTheta = Vector3.Dot(n, l);
+                var r = 2 * cosTheta * n - l;
+
+                if (cosTheta >= 0)
+                {
+                    diff += color * cosTheta * c;
+
+                    var alpha = Vector3.Dot(r, Vector3.Normalize(p - o));
+                    if (alpha < 0)
+                        spec += color * (float)Math.Pow(alpha, K);
+                }
+            }
+
+            return diff + spec;
+        }
+
+        private Vector2 ToScreenCoordinates(Vector4 pW)
+        {
+            var v = Helper.FromHomogeneous(pW);
+            var x = (Width * v.X / v.Z) + (Width / 2.0f);
+            var y = (Width * v.Y / v.Z) + (Height / 2.0f);
             return new Vector2(x, y);
         }
     }

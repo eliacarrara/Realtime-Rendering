@@ -1,5 +1,8 @@
-﻿using System;
+﻿using RealtimeRendering.Textures;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Numerics;
 using System.Windows;
 using System.Windows.Media;
@@ -9,27 +12,22 @@ namespace RealtimeRendering
 {
     class Scene
     {
-        const float ANGLE = 0.01f; // ~0.57°
-        static readonly Matrix4x4 rotMX = Matrix4x4.CreateRotationX(ANGLE);
-        static readonly Matrix4x4 rotMY = Matrix4x4.CreateRotationY(ANGLE);
-        static readonly Matrix4x4 rotMZ = Matrix4x4.CreateRotationZ(2*ANGLE);
-        static readonly Matrix4x4 rotM = rotMX * rotMY * rotMZ; 
-
-        public Scene(ColorPoint[] points, Triangle[] triangles)
+        public Scene(Camera c, Vector3[] v, FaceElement[] f, Vector3[] n, Vector2[] t, ITexture[] textures, Light[] l)
         {
-            Points = points;
-            Triangles = triangles;
+            Camera = c;
+            Vertecies = v.Select(pt => new Vector4(pt, 1)).ToArray() ?? throw new ArgumentNullException();
+            FaceElement = f ?? throw new ArgumentNullException();
+            Normals = n.Select(pt => new Vector4(pt, 0)).ToArray() ?? throw new ArgumentNullException();
+            TexturePoints = t ?? throw new ArgumentException();
+            Textures = textures ?? throw new ArgumentException();
+            Lights = l ?? throw new ArgumentNullException();
         }
-
-        public ColorPoint[] Points { get; private set; }
-        public Triangle[] Triangles { get; private set; }
-        
-        public void RotateAll()
-        {
-            for (int i = 0; i < Points.Length; i++)
-            {
-                Points[i].Position = Vector3.Transform(Points[i].Position, rotM);
-            }
-        }
+        public Camera Camera { get; private set; }
+        public Vector4[] Vertecies { get; private set; }
+        public FaceElement[] FaceElement { get; private set; }
+        public Vector4[] Normals { get; private set; }
+        public Vector2[] TexturePoints { get; private set; }
+        public ITexture[] Textures { get; private set; }
+        public Light[] Lights { get; private set; }
     }
 }

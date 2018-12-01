@@ -1,6 +1,10 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -11,11 +15,11 @@ namespace RealtimeRendering
     /// </summary>
     public partial class MainWindow : Window
     {
-        readonly Scene s;
         readonly Renderer r;
         readonly WriteableBitmap bmp;
         readonly Int32Rect rect;
         readonly Stopwatch sw;
+        readonly Scene s;
 
         public MainWindow()
         {
@@ -25,7 +29,7 @@ namespace RealtimeRendering
             bmp = new WriteableBitmap(width, height, 96, 96, PixelFormats.Rgb24, null);
             rect = new Int32Rect(0, 0, width, height);
 
-            s = SceneFactory.SpinningBox();
+            s = SceneFactory.Box();
             r = new Renderer(width, height, Helper.CalcStride(width, bmp.Format.BitsPerPixel));
             sw = new Stopwatch();
 
@@ -35,16 +39,12 @@ namespace RealtimeRendering
         private void Paint(object sender, EventArgs e)
         {
             sw.Stop();
-            double milliSeconds = sw.Elapsed.TotalMilliseconds;
-            LblFPS.Content = string.Format("{0:N2}fps", 1000.0f / milliSeconds);
+            LblFPS.Content = $"{(1000.0f / sw.Elapsed.TotalMilliseconds):N0}fps";
             sw.Restart();
 
-            bmp.WritePixels(rect, r.Render(s, milliSeconds), r.Stride, 0);
+            var data = r.Render(s);
+            bmp.WritePixels(rect, data, r.Stride, 0);
             PaintCanvas.Background = new ImageBrush { ImageSource = bmp };
-
-            s.RotateAll();
-
-            
         }
     }
 }
